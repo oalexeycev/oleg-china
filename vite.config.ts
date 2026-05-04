@@ -5,6 +5,16 @@ const OPENROUTER_TTS_MODEL = "google/gemini-3.1-flash-tts-preview";
 const TTS_VOICE = "alloy";
 const PCM_SAMPLE_RATE = 24_000;
 
+function normalizeOpenRouterApiKey(raw: string | undefined): string {
+  let k = String(raw ?? "")
+    .trim()
+    .replace(/[\r\n]+/g, "");
+  if (k.toLowerCase().startsWith("bearer ")) {
+    k = k.slice(7).trim();
+  }
+  return k;
+}
+
 function wrapPcm16LeMonoToWav(pcm: ArrayBuffer, sampleRate: number): ArrayBuffer {
   const data = new Uint8Array(pcm);
   const out = new Uint8Array(44 + data.length);
@@ -63,7 +73,12 @@ async function fetchTtsPcmAsWav(apiKey: string, input: string, referer?: string)
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(err || `OpenRouter TTS ${res.status}`);
+    let hint = err || `OpenRouter TTS ${res.status}`;
+    if (res.status === 401 && err.includes("Missing Authentication header")) {
+      hint +=
+        " — пустой ключ: проверь OPENROUTER_API_KEY в .env (только sk-or-v1-…, без Bearer), перезапусти vite.";
+    }
+    throw new Error(hint);
   }
 
   const pcm = await res.arrayBuffer();
@@ -89,7 +104,7 @@ function ttsDevApi(env: Record<string, string>): Plugin {
         req.on("data", (c: Buffer) => chunks.push(c));
         req.on("end", () => {
           void (async () => {
-            const key = env.OPENROUTER_API_KEY;
+            const key = normalizeOpenRouterApiKey(env.OPENROUTER_API_KEY);
             if (!key) {
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json; charset=utf-8");

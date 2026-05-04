@@ -9,6 +9,17 @@ const OPENROUTER_TTS_MODEL = "google/gemini-3.1-flash-tts-preview";
 const TTS_VOICE = "alloy";
 const PCM_SAMPLE_RATE = 24_000;
 
+/** OpenRouter даёт 401 «Missing Authentication header», если после `Bearer ` пусто (пробелы, пустая env). */
+function normalizeOpenRouterApiKey(raw: string | undefined): string {
+  let k = String(raw ?? "")
+    .trim()
+    .replace(/[\r\n]+/g, "");
+  if (k.toLowerCase().startsWith("bearer ")) {
+    k = k.slice(7).trim();
+  }
+  return k;
+}
+
 function wrapPcm16LeMonoToWav(pcm: ArrayBuffer, sampleRate: number): ArrayBuffer {
   const data = new Uint8Array(pcm);
   const out = new Uint8Array(44 + data.length);
@@ -67,7 +78,12 @@ async function fetchTtsPcmAsWav(apiKey: string, input: string, referer?: string)
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(err || `OpenRouter TTS ${res.status}`);
+    let hint = err || `OpenRouter TTS ${res.status}`;
+    if (res.status === 401 && err.includes("Missing Authentication header")) {
+      hint +=
+        " — на сервере пустой токен после Bearer: проверь OPENROUTER_API_KEY в Vercel (Production и Preview), только sk-or-v1-…, redeploy.";
+    }
+    throw new Error(hint);
   }
 
   const pcm = await res.arrayBuffer();
@@ -84,9 +100,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = normalizeOpenRouterApiKey(process.env["OPENROUTER_API_KEY"]);
   if (!apiKey) {
-    res.status(500).json({ error: "На сервере не задан OPENROUTER_API_KEY (Vercel → Settings → Environment Variables)" });
+    res.status(500).json({
+      error:
+        "OPENROUTER_API_KEY пустой или только пробелы. В Vercel → Environment Variables вставь только ключ (sk-or-v1-…), без слова Bearer. Нужен redeploy после сохранения; для Preview отдельно включи переменную.",
+    });
     return;
   }
 
