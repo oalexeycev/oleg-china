@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { fetchTtsPcmAsWav } from "../lib/openrouterTts";
+import { fetchTtsPcmAsWav } from "./lib/openrouterTts";
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== "POST") {

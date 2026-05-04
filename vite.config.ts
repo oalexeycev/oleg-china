@@ -1,5 +1,5 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
-import { fetchTtsPcmAsWav } from "./lib/openrouterTts";
+import { fetchTtsPcmAsWav } from "./api/lib/openrouterTts";
 
 function ttsDevApi(env: Record<string, string>): Plugin {
   return {
