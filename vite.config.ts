@@ -5,15 +5,36 @@ const OPENROUTER_TTS_MODEL = "google/gemini-3.1-flash-tts-preview";
 const TTS_VOICE = "alloy";
 const PCM_SAMPLE_RATE = 24_000;
 
-function normalizeOpenRouterApiKey(raw: string | undefined): string {
-  let k = String(raw ?? "")
-    .trim()
-    .replace(/[\r\n]+/g, "");
-  if (k.toLowerCase().startsWith("bearer ")) {
-    k = k.slice(7).trim();
+function stripMatchingQuotes(k: string): string {
+  if (k.length < 2) return k;
+  const open = k[0]!;
+  const close = k[k.length - 1]!;
+  const pairs: Record<string, string> = {
+    '"': '"',
+    "'": "'",
+    "\u201c": "\u201d",
+    "\u2018": "\u2019",
+  };
+  if (pairs[open] === close) {
+    return k.slice(1, -1).trim();
   }
   return k;
 }
+
+function normalizeOpenRouterApiKey(raw: string | undefined): string {
+  let k = String(raw ?? "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/[\r\n]+/g, "");
+  k = stripMatchingQuotes(k);
+  if (k.toLowerCase().startsWith("bearer ")) {
+    k = k.slice(7).trim();
+    k = stripMatchingQuotes(k);
+  }
+  return k.trim();
+}
+
+const OPENROUTER_KEY_RE = /^sk-or-v1-[A-Za-z0-9_-]{32,}$/;
 
 function wrapPcm16LeMonoToWav(pcm: ArrayBuffer, sampleRate: number): ArrayBuffer {
   const data = new Uint8Array(pcm);
@@ -51,13 +72,12 @@ function wrapPcm16LeMonoToWav(pcm: ArrayBuffer, sampleRate: number): ArrayBuffer
 }
 
 async function fetchTtsPcmAsWav(apiKey: string, input: string, referer?: string): Promise<ArrayBuffer> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-    "X-Title": "oleg-china",
-  };
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${apiKey}`);
+  headers.set("Content-Type", "application/json");
+  headers.set("X-OpenRouter-Title", "oleg-china");
   if (referer) {
-    headers["HTTP-Referer"] = referer;
+    headers.set("HTTP-Referer", referer);
   }
 
   const res = await fetch("https://openrouter.ai/api/v1/tts", {
@@ -76,7 +96,7 @@ async function fetchTtsPcmAsWav(apiKey: string, input: string, referer?: string)
     let hint = err || `OpenRouter TTS ${res.status}`;
     if (res.status === 401 && err.includes("Missing Authentication header")) {
       hint +=
-        " — пустой ключ: проверь OPENROUTER_API_KEY в .env (только sk-or-v1-…, без Bearer), перезапусти vite.";
+        " — убери кавычки и Bearer в .env; только sk-or-v1-… одной строкой. Перезапусти vite.";
     }
     throw new Error(hint);
   }
@@ -112,6 +132,17 @@ function ttsDevApi(env: Record<string, string>): Plugin {
                 JSON.stringify({
                   error:
                     "Для озвучки локально создай файл .env с OPENROUTER_API_KEY=... или запусти vercel dev",
+                }),
+              );
+              return;
+            }
+            if (!OPENROUTER_KEY_RE.test(key)) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(
+                JSON.stringify({
+                  error:
+                    "OPENROUTER_API_KEY в .env не похож на sk-or-v1-… (убери кавычки и Bearer, одна строка).",
                 }),
               );
               return;
