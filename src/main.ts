@@ -1,5 +1,6 @@
 import "./style.css";
 import { CARDS, type Card } from "./cards";
+import { speakHanziSequentially } from "./speak";
 
 const root = document.querySelector("#app");
 if (!(root instanceof HTMLDivElement)) {
@@ -31,6 +32,9 @@ function render(): void {
   progress.className = "progress";
   progress.textContent = `${index + 1} / ${CARDS.length}`;
   header.append(title, progress);
+
+  const cardRow = document.createElement("div");
+  cardRow.className = "card-row";
 
   const cardBtn = document.createElement("button");
   cardBtn.type = "button";
@@ -66,6 +70,40 @@ function render(): void {
     render();
   });
 
+  const speakErr = document.createElement("p");
+  speakErr.className = "speak-err";
+  speakErr.setAttribute("role", "status");
+
+  const speakCol = document.createElement("div");
+  speakCol.className = "speak-col";
+
+  const speakBtn = document.createElement("button");
+  speakBtn.type = "button";
+  speakBtn.className = "btn btn--speak";
+  speakBtn.textContent = "Озвучить";
+  speakBtn.title = "Озвучить каждый иероглиф по очереди (OpenRouter TTS)";
+
+  const speakHint = document.createElement("p");
+  speakHint.className = "speak-hint";
+  speakHint.textContent = "По одному символу";
+
+  speakBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    speakErr.textContent = "";
+    speakBtn.disabled = true;
+    speakBtn.textContent = "…";
+    void speakHanziSequentially(card.hanzi, (msg) => {
+      speakErr.textContent = msg;
+    }).finally(() => {
+      speakBtn.disabled = false;
+      speakBtn.textContent = "Озвучить";
+    });
+  });
+
+  speakCol.append(speakBtn, speakHint);
+
+  cardRow.append(cardBtn, speakCol);
+
   const row = document.createElement("div");
   row.className = "actions";
 
@@ -95,7 +133,7 @@ function render(): void {
   tip.className = "kbd-tip";
   tip.textContent = "Пробел — открыть/закрыть · ← / → — карточки";
 
-  main.append(header, cardBtn, row, tip);
+  main.append(header, cardRow, speakErr, row, tip);
   app.append(main);
 }
 
